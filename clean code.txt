@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 
-file_path = r"C:\Users\Downloads\python_cleaning_practice_200_rows.xlsx"
+file_path = r"C:\Users\11931\Downloads\python_cleaning_practice_200_rows.xlsx"
 
 df = pd.read_excel(file_path, sheet_name="dirty_sales_data", engine="openpyxl")
 
@@ -17,7 +17,7 @@ df_copy['Order_ID'] = (
     .str.replace('-', '', regex=False)
 )
 
-df_copy = df_copy.drop_duplicates(subset=['Order_ID', 'Customer_Name'], keep='first')
+df_copy = df_copy.drop_duplicates(subset='Order_ID', keep='first')
 
 
 # Clean Customer_Name
@@ -63,7 +63,7 @@ df_copy.loc[
 ] = np.nan
 
 
-#CLean phone
+#Clean phone
 df_copy['Phone'] = (
     df_copy['Phone']
     .astype(str)
@@ -97,7 +97,6 @@ df_copy['Order_Date'] = pd.to_datetime(
     format='mixed'
 )
 
-
 #Clean Product
 df_copy['Product'] = (
     df_copy['Product']
@@ -122,6 +121,16 @@ df_copy['Category'] = (
 df_copy['Category'] = df_copy['Category'].replace('Nan', np.nan)
 
 
+
+# Fix product acronyms / proper product names
+product_map = {
+    'Usb Cable': 'USB Cable',
+    'Ssd': 'SSD'
+}
+
+df_copy['Product'] = df_copy['Product'].replace(product_map)
+
+
 #Clean Quantity
 df_copy['Quantity'] = pd.to_numeric(df_copy['Quantity'], errors='coerce')
 
@@ -130,8 +139,7 @@ df_copy.loc[
     'Quantity'
 ] = np.nan
 
-df_copy['Quantity'] = df_copy['Quantity'].astype(int)
-
+df_copy['Quantity'] = df_copy['Quantity'].round().astype('Int64')
 
 #Clean Unit_Price
 df_copy['Unit_Price'] = (
@@ -151,16 +159,16 @@ df_copy['Discount_%'] = df_copy['Discount_%'].fillna(0)
 
 
 
-# Create Total_Amount
-df_copy['Total_Amount'] = (
+# Create Total_Amount only when Quantity, Unit_Price, and Discount_% are valid
+df_copy['Total_Amount'] = np.where(
+    df_copy[['Quantity', 'Unit_Price', 'Discount_%']].notna().all(axis=1),
     df_copy['Quantity'].astype(float)
     * df_copy['Unit_Price']
-    * (1 - df_copy['Discount_%'] / 100)
+    * (1 - df_copy['Discount_%'] / 100),
+    np.nan
 )
 
-df_copy['Total_Amount'] = df_copy['Total_Amount'].round(2)
-
-
+df_copy['Total_Amount'] = pd.to_numeric(df_copy['Total_Amount'], errors='coerce').round(2)
 
 #Clean Payment Method
 df_copy['Payment_Method'] = (
@@ -197,7 +205,15 @@ df_copy.loc[
     'Customer_Rating'
 ] = np.nan
 
-df_copy['Customer_Rating'] = df_copy['Customer_Rating'].dropna().astype(int)
+
+# Fill missing ratings with median rating
+median_rating = df_copy['Customer_Rating'].median()
+df_copy['Customer_Rating'] = df_copy['Customer_Rating'].fillna(median_rating)
+
+# Convert to integer
+df_copy['Customer_Rating'] = df_copy['Customer_Rating'].round().astype(int)
+
+
 
 #. Clean Notes
 df_copy['Notes'] = (
@@ -209,6 +225,26 @@ df_copy['Notes'] = (
 
 df_copy['Notes'] = df_copy['Notes'].replace(['nan', 'none', ''], np.nan)
 
+# Add Revenue Valid Flag
+df_copy['Revenue_Valid_Flag'] = np.where(
+    df_copy[['Quantity', 'Unit_Price', 'Total_Amount']].isna().any(axis=1),
+    'Invalid Revenue Row',
+    'Valid Revenue Row'
+)
+
+
+# Add Data Quality Flag
+df_copy['Data_Quality_Flag'] = np.where(
+    df_copy[['Email', 'Phone', 'Order_Date', 'Quantity', 'Unit_Price', 'Total_Amount']].isna().any(axis=1),
+    'Issue Found',
+    'Clean'
+)
+
+
+# Add Order Month for Power BI
+df_copy['Order_Month'] = df_copy['Order_Date'].dt.to_period('M').astype(str)
+df_copy['Order_Month'] = df_copy['Order_Month'].replace('NaT', 'Missing Date')
+
 #Chk result
 print(df_copy.head())
 
@@ -218,7 +254,7 @@ print(df_copy.dtypes)
 
 
 df_copy.to_excel(
-     r"C:\Users\Downloads\cleaned_sales_data.xlsx",
+     r"C:\Users\11931\Downloads\cleaned_sales_data.xlsx",
      index=False
  )
 print("File saved successfully")
